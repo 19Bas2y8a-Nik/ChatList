@@ -59,10 +59,32 @@ class NetworkClient:
                 # Проверка статуса ответа
                 response.raise_for_status()
                 
+                # Проверка Content-Type
+                content_type = response.headers.get('Content-Type', '').lower()
+                
+                # Если получен HTML вместо JSON, это ошибка
+                if 'text/html' in content_type or response.text.strip().startswith('<!DOCTYPE') or response.text.strip().startswith('<html'):
+                    raise APIError(
+                        f"Получен HTML вместо JSON ответа. Возможно, неправильный API URL.\n"
+                        f"URL: {url}\n"
+                        f"Content-Type: {content_type}\n"
+                        f"Проверьте, что API URL правильный (например, https://openrouter.ai/api/v1/chat/completions)\n"
+                        f"Первые 200 символов ответа: {response.text[:200]}"
+                    )
+                
                 # Попытка распарсить JSON
                 try:
                     return response.json()
                 except ValueError:
+                    # Если ответ не JSON, проверяем, не HTML ли это
+                    text = response.text.strip()
+                    if text.startswith('<!DOCTYPE') or text.startswith('<html'):
+                        raise APIError(
+                            f"Получен HTML вместо JSON ответа. Возможно, неправильный API URL.\n"
+                            f"URL: {url}\n"
+                            f"Проверьте, что API URL правильный.\n"
+                            f"Первые 200 символов ответа: {text[:200]}"
+                        )
                     # Если ответ не JSON, возвращаем текст
                     return {"text": response.text}
                     
@@ -82,10 +104,43 @@ class NetworkClient:
                 error_msg = f"HTTP ошибка {response.status_code}"
                 try:
                     error_data = response.json()
+                    # Обработка различных форматов ошибок
                     if "error" in error_data:
-                        error_msg += f": {error_data['error']}"
+                        error_info = error_data["error"]
+                        if isinstance(error_info, dict):
+                            error_msg = error_info.get("message", str(error_info))
+                        else:
+                            error_msg = str(error_info)
+                    elif "message" in error_data:
+                        error_msg = error_data["message"]
+                        # Добавляем дополнительную информацию для специфичных ошибок
+                        if "data policy" in error_msg.lower() or "privacy" in error_msg.lower():
+                            error_msg += "\n\nНастройте политику данных на: https://openrouter.ai/settings/privacy"
+                        elif "credits" in error_msg.lower() or "payment" in error_msg.lower() or response.status_code == 402:
+                            # Ошибка нехватки кредитов
+                            if "credits" in error_msg.lower():
+                                error_msg += "\n\nПопробуйте уменьшить max_tokens или пополните баланс на: https://openrouter.ai/settings/credits"
+                            else:
+                                error_msg = f"Недостаточно кредитов для выполнения запроса.\n\n{error_msg}\n\nПополните баланс: https://openrouter.ai/settings/credits"
+                        if "code" in error_data:
+                            error_msg = f"{error_msg} (код: {error_data['code']})"
+                    else:
+                        error_msg = str(error_data)
                 except:
-                    error_msg += f": {response.text[:200]}"
+                    # Если не удалось распарсить JSON, используем текст ответа
+                    text = response.text[:500]
+                    if "data policy" in text.lower() or "privacy" in text.lower():
+                        error_msg = f"Ошибка политики данных. Настройте: https://openrouter.ai/settings/privacy"
+                    elif "credits" in text.lower() or "payment" in text.lower() or response.status_code == 402:
+                        error_msg = f"Недостаточно кредитов. Пополните баланс: https://openrouter.ai/settings/credits"
+                    else:
+                        error_msg += f": {text}"
+                
+                # Специальная обработка для статуса 402 (Payment Required)
+                if response.status_code == 402:
+                    if "credits" not in error_msg.lower() and "payment" not in error_msg.lower():
+                        error_msg = f"Недостаточно кредитов для выполнения запроса.\n\n{error_msg}\n\nПополните баланс: https://openrouter.ai/settings/credits"
+                
                 raise APIError(error_msg)
             
             except requests.exceptions.RequestException as e:

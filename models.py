@@ -38,7 +38,21 @@ class ModelHandler:
         Returns:
             API-ключ или None, если не найден
         """
-        return os.getenv(api_id)
+        if not api_id or not api_id.strip():
+            return None
+        
+        api_key = os.getenv(api_id.strip())
+        
+        # Если ключ не найден и api_id содержит слэш, вероятно это имя модели, а не переменная
+        if not api_key and ("/" in api_id or "\\" in api_id):
+            raise APIError(
+                f"Ошибка: '{api_id}' выглядит как имя модели, а не как переменная окружения.\n\n"
+                "В поле 'API ID' должно быть имя переменной из файла .env (например, OPENROUTER_API_KEY),\n"
+                "а не имя модели (например, meta-llama/llama-3.3-70b-instruct).\n\n"
+                "Имя модели указывается в поле 'Название' модели."
+            )
+        
+        return api_key
     
     def get_active_models(self) -> List[Dict]:
         """
@@ -66,7 +80,9 @@ class ModelHandler:
         model_type = model.get("model_type", "").lower()
         
         # Выбор обработчика в зависимости от типа модели
-        if "openai" in model_type or "gpt" in model_type:
+        if "openrouter" in model_type:
+            return self._send_to_openrouter(model, prompt)
+        elif "openai" in model_type or "gpt" in model_type:
             return self._send_to_openai(model, prompt)
         elif "deepseek" in model_type:
             return self._send_to_deepseek(model, prompt)
@@ -87,9 +103,19 @@ class ModelHandler:
         Returns:
             Ответ от модели
         """
-        api_key = self.get_api_key(model["api_id"])
+        api_id = model.get("api_id", "").strip()
+        if not api_id:
+            raise APIError("API ID не указан в настройках модели")
+        
+        api_key = self.get_api_key(api_id)
         if not api_key:
-            raise APIError(f"API-ключ не найден для переменной {model['api_id']}")
+            raise APIError(
+                f"API-ключ не найден для переменной '{api_id}'.\n\n"
+                "Проверьте:\n"
+                f"1. Файл .env существует и содержит переменную {api_id}\n"
+                f"2. В файле .env есть строка: {api_id}=ваш_ключ\n"
+                "3. Переменная указана правильно (без пробелов, кавычек и т.д.)"
+            )
         
         url = model["api_url"]
         headers = {
@@ -133,9 +159,19 @@ class ModelHandler:
         Returns:
             Ответ от модели
         """
-        api_key = self.get_api_key(model["api_id"])
+        api_id = model.get("api_id", "").strip()
+        if not api_id:
+            raise APIError("API ID не указан в настройках модели")
+        
+        api_key = self.get_api_key(api_id)
         if not api_key:
-            raise APIError(f"API-ключ не найден для переменной {model['api_id']}")
+            raise APIError(
+                f"API-ключ не найден для переменной '{api_id}'.\n\n"
+                "Проверьте:\n"
+                f"1. Файл .env существует и содержит переменную {api_id}\n"
+                f"2. В файле .env есть строка: {api_id}=ваш_ключ\n"
+                "3. Переменная указана правильно (без пробелов, кавычек и т.д.)"
+            )
         
         url = model["api_url"]
         headers = {
@@ -166,6 +202,148 @@ class ModelHandler:
         except Exception as e:
             raise APIError(f"Ошибка при запросе к DeepSeek: {str(e)}")
     
+    def _send_to_openrouter(self, model: Dict, prompt: str) -> str:
+        """
+        Отправить запрос в OpenRouter API.
+        
+        Args:
+            model: Данные модели
+            prompt: Промт
+            
+        Returns:
+            Ответ от модели
+        """
+        api_id = model.get("api_id", "").strip()
+        if not api_id:
+            raise APIError("API ID не указан в настройках модели")
+        
+        api_key = self.get_api_key(api_id)
+        if not api_key:
+            raise APIError(
+                f"API-ключ не найден для переменной '{api_id}'.\n\n"
+                "Проверьте:\n"
+                f"1. Файл .env существует и содержит переменную {api_id}\n"
+                f"2. В файле .env есть строка: {api_id}=ваш_ключ\n"
+                "3. Переменная указана правильно (без пробелов, кавычек и т.д.)"
+            )
+        
+        url = model["api_url"].strip()
+        original_url = url
+        
+        # Автоматическое исправление URL для OpenRouter, если он неправильный
+        # Правильный URL должен быть: https://openrouter.ai/api/v1/chat/completions
+        if "openrouter.ai" in url.lower() and "/api/v1/chat/completions" not in url.lower():
+            # Если URL содержит имя модели вместо правильного endpoint, исправляем
+            if "/" in url and url.count("/") > 3:  # Например: https://openrouter.ai/meta-llama/llama-3.3-70b-instruct
+                url = "https://openrouter.ai/api/v1/chat/completions"
+            elif not url.endswith("/api/v1/chat/completions"):
+                # Если URL просто openrouter.ai или openrouter.ai/что-то, исправляем
+                url = "https://openrouter.ai/api/v1/chat/completions"
+            
+            # Логируем исправление (если есть доступ к логгеру)
+            # В этом контексте мы не имеем доступа к логгеру, но можем добавить предупреждение в ошибку
+            if url != original_url:
+                # URL был исправлен, но мы не можем логировать здесь
+                # Вместо этого просто используем правильный URL
+                pass
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/yourusername/chatlist",  # Опционально
+            "X-Title": "ChatList"  # Опционально
+        }
+        
+        # В OpenRouter имя модели указывается в поле "model"
+        # Оно должно быть в формате "provider/model-name" (например, "meta-llama/llama-3.3-70b-instruct")
+        # Используем поле "name" из БД, но если оно не содержит слэш, это может быть проблема
+        model_name = model.get("name", "").strip()
+        
+        # Если имя модели не содержит слэш, возможно это просто название для отображения
+        # В этом случае нужно использовать полный идентификатор модели OpenRouter
+        # Но так как мы не знаем точный формат, попробуем использовать как есть
+        # Пользователь должен указать полный идентификатор модели в поле "name"
+        # Например: "meta-llama/llama-3.3-70b-instruct"
+        
+        if not model_name:
+            model_name = "openai/gpt-3.5-turbo"  # Значение по умолчанию
+        
+        json_data = {
+            "model": model_name,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 4096  # Ограничение max_tokens для предотвращения ошибок нехватки кредитов
+        }
+        
+        try:
+            response = self.network_client.post(url, headers, json_data)
+            
+            # Проверка на HTML в ответе (дополнительная проверка)
+            if "text" in response:
+                text = response.get("text", "")
+                if isinstance(text, str) and (text.strip().startswith('<!DOCTYPE') or text.strip().startswith('<html')):
+                    raise APIError(
+                        f"Получен HTML вместо JSON ответа от OpenRouter.\n\n"
+                        f"Возможные причины:\n"
+                        f"1. Неправильный API URL. Должен быть: https://openrouter.ai/api/v1/chat/completions\n"
+                        f"2. Проблема с аутентификацией (неверный API-ключ)\n"
+                        f"3. Сервер вернул HTML-страницу с ошибкой\n\n"
+                        f"Текущий URL: {url}\n"
+                        f"Первые 200 символов ответа: {text[:200]}"
+                    )
+            
+            # Детальная обработка ответа OpenRouter
+            # OpenRouter может возвращать ответ в разных форматах
+            
+            # Проверяем наличие ошибки в ответе
+            if "error" in response:
+                error_msg = response.get("error", {})
+                if isinstance(error_msg, dict):
+                    error_text = error_msg.get("message", str(error_msg))
+                else:
+                    error_text = str(error_msg)
+                raise APIError(f"Ошибка от OpenRouter API: {error_text}")
+            
+            # Стандартный формат OpenAI-совместимого API
+            if "choices" in response and len(response["choices"]) > 0:
+                choice = response["choices"][0]
+                if "message" in choice:
+                    content = choice["message"].get("content")
+                    if content:
+                        return content
+                    else:
+                        # Возможно, ответ в другом поле
+                        if "text" in choice["message"]:
+                            return choice["message"]["text"]
+                        else:
+                            raise APIError(f"Ответ не содержит текста. Структура: {list(choice['message'].keys())}")
+                elif "text" in choice:
+                    return choice["text"]
+                else:
+                    raise APIError(f"Неожиданная структура choice: {list(choice.keys())}")
+            else:
+                # Если ответ содержит только "text" с HTML, это уже обработано выше
+                # Логируем полный ответ для отладки
+                import json
+                response_str = json.dumps(response, ensure_ascii=False, indent=2)
+                raise APIError(
+                    f"Неожиданный формат ответа от OpenRouter API.\n"
+                    f"Отправлено: model={model_name}, URL={url}\n"
+                    f"Структура ответа: {list(response.keys())}\n"
+                    f"Проверьте:\n"
+                    f"1. Правильность API URL (должен быть: https://openrouter.ai/api/v1/chat/completions)\n"
+                    f"2. Правильность API-ключа в файле .env\n"
+                    f"3. Правильность идентификатора модели\n\n"
+                    f"Полный ответ: {response_str[:500]}..."
+                )
+                
+        except APIError:
+            raise
+        except Exception as e:
+            raise APIError(f"Ошибка при запросе к OpenRouter: {str(e)}")
+    
     def _send_to_groq(self, model: Dict, prompt: str) -> str:
         """
         Отправить запрос в Groq API.
@@ -177,9 +355,19 @@ class ModelHandler:
         Returns:
             Ответ от модели
         """
-        api_key = self.get_api_key(model["api_id"])
+        api_id = model.get("api_id", "").strip()
+        if not api_id:
+            raise APIError("API ID не указан в настройках модели")
+        
+        api_key = self.get_api_key(api_id)
         if not api_key:
-            raise APIError(f"API-ключ не найден для переменной {model['api_id']}")
+            raise APIError(
+                f"API-ключ не найден для переменной '{api_id}'.\n\n"
+                "Проверьте:\n"
+                f"1. Файл .env существует и содержит переменную {api_id}\n"
+                f"2. В файле .env есть строка: {api_id}=ваш_ключ\n"
+                "3. Переменная указана правильно (без пробелов, кавычек и т.д.)"
+            )
         
         url = model["api_url"]
         headers = {
@@ -221,9 +409,19 @@ class ModelHandler:
         Returns:
             Ответ от модели
         """
-        api_key = self.get_api_key(model["api_id"])
+        api_id = model.get("api_id", "").strip()
+        if not api_id:
+            raise APIError("API ID не указан в настройках модели")
+        
+        api_key = self.get_api_key(api_id)
         if not api_key:
-            raise APIError(f"API-ключ не найден для переменной {model['api_id']}")
+            raise APIError(
+                f"API-ключ не найден для переменной '{api_id}'.\n\n"
+                "Проверьте:\n"
+                f"1. Файл .env существует и содержит переменную {api_id}\n"
+                f"2. В файле .env есть строка: {api_id}=ваш_ключ\n"
+                "3. Переменная указана правильно (без пробелов, кавычек и т.д.)"
+            )
         
         url = model["api_url"]
         headers = {
