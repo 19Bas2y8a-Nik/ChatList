@@ -416,9 +416,13 @@ class MainWindow(QMainWindow):
         self.open_button = QPushButton("Открыть")
         self.open_button.clicked.connect(self.open_selected_result)
         self.open_button.setToolTip("Открыть выбранный ответ в форматированном Markdown")
+        self.view_saved_button = QPushButton("Просмотр сохраненных")
+        self.view_saved_button.clicked.connect(self.view_saved_results)
+        self.view_saved_button.setToolTip("Просмотреть сохраненные результаты из базы данных")
         result_buttons_layout.addWidget(self.save_button)
         result_buttons_layout.addWidget(self.new_request_button)
         result_buttons_layout.addWidget(self.open_button)
+        result_buttons_layout.addWidget(self.view_saved_button)
         result_buttons_layout.addWidget(self.export_md_button)
         result_buttons_layout.addWidget(self.export_json_button)
         results_layout.addLayout(result_buttons_layout)
@@ -440,9 +444,15 @@ class MainWindow(QMainWindow):
         
         # Меню Файл
         file_menu = menubar.addMenu("Файл")
+        view_saved_action = QAction("Просмотр сохраненных результатов", self)
+        view_saved_action.triggered.connect(self.view_saved_results)
+        file_menu.addAction(view_saved_action)
+        
         export_action = QAction("Экспорт результатов", self)
         export_action.triggered.connect(lambda: self.export_results("md"))
         file_menu.addAction(export_action)
+        
+        file_menu.addSeparator()
         
         exit_action = QAction("Выход", self)
         exit_action.triggered.connect(self.close)
@@ -1042,6 +1052,11 @@ class MainWindow(QMainWindow):
         dialog = MarkdownViewDialog(self, model_name, response_text)
         dialog.exec_()
     
+    def view_saved_results(self):
+        """Просмотр сохраненных результатов из базы данных."""
+        dialog = SavedResultsDialog(self, self.db)
+        dialog.exec_()
+    
     def closeEvent(self, event):
         """Обработчик закрытия окна."""
         if self.send_thread and self.send_thread.isRunning():
@@ -1101,6 +1116,221 @@ class MarkdownViewDialog(QDialog):
         clipboard = QApplication.clipboard()
         clipboard.setText(self.text_edit.toPlainText())
         QMessageBox.information(self, "Успех", "Текст скопирован в буфер обмена!")
+
+
+class SavedResultsDialog(QDialog):
+    """Диалог для просмотра сохраненных результатов."""
+    
+    def __init__(self, parent=None, db: Database = None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Сохраненные результаты")
+        self.setModal(True)
+        self.resize(900, 600)
+        self.init_ui()
+    
+    def init_ui(self):
+        """Инициализация интерфейса диалога."""
+        layout = QVBoxLayout()
+        
+        # Поиск
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Поиск:"))
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Поиск по промтам или ответам...")
+        self.search_edit.textChanged.connect(self.filter_results)
+        search_layout.addWidget(self.search_edit)
+        layout.addLayout(search_layout)
+        
+        # Таблица результатов
+        self.results_table = QTableWidget()
+        self.results_table.setColumnCount(4)
+        self.results_table.setHorizontalHeaderLabels(["Дата", "Промт", "Модель", "Ответ"])
+        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.setWordWrap(True)
+        self.results_table.setAlternatingRowColors(True)
+        self.results_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.results_table.setSortingEnabled(True)
+        self.results_table.verticalHeader().setDefaultSectionSize(100)
+        self.results_table.verticalHeader().setMaximumSectionSize(250)
+        self.results_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        header = self.results_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        self.results_table.itemDoubleClicked.connect(self.open_result)
+        layout.addWidget(self.results_table)
+        
+        # Кнопки
+        buttons_layout = QHBoxLayout()
+        self.open_button = QPushButton("Открыть")
+        self.open_button.clicked.connect(self.open_selected_result)
+        self.open_button.setToolTip("Открыть выбранный результат в форматированном Markdown")
+        self.delete_button = QPushButton("Удалить")
+        self.delete_button.clicked.connect(self.delete_selected_result)
+        self.delete_button.setToolTip("Удалить выбранный результат из базы данных")
+        buttons_layout.addWidget(self.open_button)
+        buttons_layout.addWidget(self.delete_button)
+        buttons_layout.addStretch()
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        buttons_layout.addWidget(buttons)
+        
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+        
+        # Загружаем результаты
+        self.load_results()
+    
+    def load_results(self):
+        """Загрузить сохраненные результаты из базы данных."""
+        results = self.db.get_results()
+        self.all_results = results
+        
+        # Получаем информацию о промтах и моделях
+        prompts = {p["id"]: p for p in self.db.get_prompts()}
+        models = {m["id"]: m for m in self.db.get_models()}
+        
+        self.results_table.setRowCount(len(results))
+        
+        for row, result in enumerate(results):
+            # Дата
+            saved_at = result.get("saved_at", "")
+            self.results_table.setItem(row, 0, QTableWidgetItem(saved_at))
+            
+            # Промт
+            prompt_id = result.get("prompt_id")
+            prompt_text = prompts.get(prompt_id, {}).get("prompt", "Неизвестный промт")
+            prompt_display = prompt_text[:50] + ("..." if len(prompt_text) > 50 else "")
+            prompt_item = QTableWidgetItem(prompt_display)
+            prompt_item.setToolTip(prompt_text)
+            prompt_item.setData(Qt.UserRole, result)  # Сохраняем полные данные результата
+            self.results_table.setItem(row, 1, prompt_item)
+            
+            # Модель
+            model_id = result.get("model_id")
+            model_name = models.get(model_id, {}).get("name", "Неизвестная модель")
+            self.results_table.setItem(row, 2, QTableWidgetItem(model_name))
+            
+            # Ответ
+            response = result.get("response", "")
+            response_display = response[:100] + ("..." if len(response) > 100 else "")
+            response_item = QTableWidgetItem(response_display)
+            response_item.setToolTip(response)
+            response_item.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
+            self.results_table.setItem(row, 3, response_item)
+    
+    def filter_results(self):
+        """Фильтрация результатов по поисковому запросу."""
+        query = self.search_edit.text().lower()
+        if not query:
+            self.load_results()
+            return
+        
+        # Фильтруем результаты
+        filtered = []
+        prompts = {p["id"]: p for p in self.db.get_prompts()}
+        
+        for result in self.all_results:
+            prompt_id = result.get("prompt_id")
+            prompt_text = prompts.get(prompt_id, {}).get("prompt", "").lower()
+            response = result.get("response", "").lower()
+            
+            if query in prompt_text or query in response:
+                filtered.append(result)
+        
+        # Обновляем таблицу
+        models = {m["id"]: m for m in self.db.get_models()}
+        self.results_table.setRowCount(len(filtered))
+        
+        for row, result in enumerate(filtered):
+            saved_at = result.get("saved_at", "")
+            self.results_table.setItem(row, 0, QTableWidgetItem(saved_at))
+            
+            prompt_id = result.get("prompt_id")
+            prompt_text = prompts.get(prompt_id, {}).get("prompt", "Неизвестный промт")
+            prompt_display = prompt_text[:50] + ("..." if len(prompt_text) > 50 else "")
+            prompt_item = QTableWidgetItem(prompt_display)
+            prompt_item.setToolTip(prompt_text)
+            prompt_item.setData(Qt.UserRole, result)
+            self.results_table.setItem(row, 1, prompt_item)
+            
+            model_id = result.get("model_id")
+            model_name = models.get(model_id, {}).get("name", "Неизвестная модель")
+            self.results_table.setItem(row, 2, QTableWidgetItem(model_name))
+            
+            response = result.get("response", "")
+            response_display = response[:100] + ("..." if len(response) > 100 else "")
+            response_item = QTableWidgetItem(response_display)
+            response_item.setToolTip(response)
+            response_item.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
+            self.results_table.setItem(row, 3, response_item)
+    
+    def open_result(self, item):
+        """Открыть результат при двойном клике."""
+        self.open_selected_result()
+    
+    def open_selected_result(self):
+        """Открыть выбранный результат в форматированном Markdown."""
+        current_row = self.results_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Предупреждение", "Выберите строку с результатом!")
+            return
+        
+        prompt_item = self.results_table.item(current_row, 1)
+        if not prompt_item:
+            return
+        
+        result = prompt_item.data(Qt.UserRole)
+        if not result:
+            return
+        
+        # Получаем информацию о модели
+        models = {m["id"]: m for m in self.db.get_models()}
+        model_id = result.get("model_id")
+        model_name = models.get(model_id, {}).get("name", "Неизвестная модель")
+        response_text = result.get("response", "")
+        
+        if not response_text:
+            QMessageBox.warning(self, "Предупреждение", "Ответ пуст!")
+            return
+        
+        # Открываем диалог с markdown
+        dialog = MarkdownViewDialog(self, model_name, response_text)
+        dialog.exec_()
+    
+    def delete_selected_result(self):
+        """Удалить выбранный результат из базы данных."""
+        current_row = self.results_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Предупреждение", "Выберите строку с результатом для удаления!")
+            return
+        
+        prompt_item = self.results_table.item(current_row, 1)
+        if not prompt_item:
+            return
+        
+        result = prompt_item.data(Qt.UserRole)
+        if not result:
+            return
+        
+        result_id = result.get("id")
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            "Удалить выбранный результат из базы данных?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                self.db.delete_result(result_id)
+                QMessageBox.information(self, "Успех", "Результат удален!")
+                self.load_results()
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось удалить результат: {str(e)}")
 
 
 class SettingsDialog(QDialog):
