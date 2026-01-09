@@ -140,6 +140,9 @@ class ModelDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.validate_and_accept)
         buttons.rejected.connect(self.reject)
+        # Изменяем текст кнопки OK на "Сохранить"
+        ok_button = buttons.button(QDialogButtonBox.Ok)
+        ok_button.setText("Сохранить")
         layout.addRow(buttons)
         
         self.setLayout(layout)
@@ -241,7 +244,6 @@ class MainWindow(QMainWindow):
         
         self.init_ui()
         self.load_prompts()
-        self.load_models()
         self.load_settings()
     
     def init_ui(self):
@@ -270,15 +272,6 @@ class MainWindow(QMainWindow):
         prompt_group = QGroupBox("Ввод промта")
         prompt_layout = QVBoxLayout()
         
-        # Поиск промтов
-        search_prompt_layout = QHBoxLayout()
-        search_prompt_layout.addWidget(QLabel("Поиск промтов:"))
-        self.prompt_search_edit = QLineEdit()
-        self.prompt_search_edit.setPlaceholderText("Поиск по промтам...")
-        self.prompt_search_edit.textChanged.connect(self.filter_prompts)
-        search_prompt_layout.addWidget(self.prompt_search_edit)
-        prompt_layout.addLayout(search_prompt_layout)
-        
         # Выбор сохраненного промта
         self.prompt_combo = QComboBox()
         self.prompt_combo.setEditable(True)
@@ -294,75 +287,14 @@ class MainWindow(QMainWindow):
         self.prompt_edit.setToolTip("Введите текст запроса, который будет отправлен во все активные модели")
         prompt_layout.addWidget(self.prompt_edit)
         
-        # Поле для тегов
-        tags_layout = QHBoxLayout()
-        tags_layout.addWidget(QLabel("Теги:"))
-        self.tags_edit = QLineEdit()
-        self.tags_edit.setPlaceholderText("тег1, тег2, тег3")
-        self.tags_edit.setToolTip("Введите теги через запятую для категоризации промта")
-        tags_layout.addWidget(self.tags_edit)
-        prompt_layout.addLayout(tags_layout)
-        
-        # Кнопки управления промтами
-        prompt_buttons_layout = QHBoxLayout()
+        # Кнопка отправки
         self.send_button = QPushButton("Отправить запрос")
         self.send_button.clicked.connect(self.send_prompt)
         self.send_button.setToolTip("Отправить промт во все активные модели")
-        self.save_prompt_button = QPushButton("Сохранить промт")
-        self.save_prompt_button.clicked.connect(self.save_current_prompt)
-        self.save_prompt_button.setToolTip("Сохранить текущий промт в базу данных")
-        prompt_buttons_layout.addWidget(self.send_button)
-        prompt_buttons_layout.addWidget(self.save_prompt_button)
-        prompt_layout.addLayout(prompt_buttons_layout)
+        prompt_layout.addWidget(self.send_button)
         
         prompt_group.setLayout(prompt_layout)
         left_layout.addWidget(prompt_group)
-        
-        # Панель управления моделями
-        models_group = QGroupBox("Управление моделями")
-        models_layout = QVBoxLayout()
-        
-        # Поиск моделей
-        search_layout = QHBoxLayout()
-        search_layout.addWidget(QLabel("Поиск:"))
-        self.model_search_edit = QLineEdit()
-        self.model_search_edit.setPlaceholderText("Поиск по моделям...")
-        self.model_search_edit.textChanged.connect(self.filter_models)
-        search_layout.addWidget(self.model_search_edit)
-        models_layout.addLayout(search_layout)
-        
-        # Таблица моделей
-        self.models_table = QTableWidget()
-        self.models_table.setColumnCount(4)
-        self.models_table.setHorizontalHeaderLabels(["Активна", "Название", "Тип", "Действия"])
-        self.models_table.horizontalHeader().setStretchLastSection(True)
-        self.models_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.models_table.setSortingEnabled(True)  # Включить сортировку
-        models_layout.addWidget(self.models_table)
-        
-        # Кнопки управления моделями
-        model_buttons_layout = QHBoxLayout()
-        self.add_model_button = QPushButton("Добавить модель")
-        self.add_model_button.clicked.connect(self.add_model)
-        self.add_model_button.setToolTip("Добавить новую модель нейросети")
-        self.edit_model_button = QPushButton("Редактировать")
-        self.edit_model_button.clicked.connect(self.edit_model)
-        self.edit_model_button.setToolTip("Редактировать выбранную модель")
-        self.delete_model_button = QPushButton("Удалить")
-        self.delete_model_button.clicked.connect(self.delete_model)
-        self.delete_model_button.setToolTip("Удалить выбранную модель")
-        model_buttons_layout.addWidget(self.add_model_button)
-        model_buttons_layout.addWidget(self.edit_model_button)
-        model_buttons_layout.addWidget(self.delete_model_button)
-        models_layout.addLayout(model_buttons_layout)
-        
-        models_group.setLayout(models_layout)
-        left_layout.addWidget(models_group)
-        
-        # Кнопка настроек
-        settings_button = QPushButton("Настройки")
-        settings_button.clicked.connect(self.show_settings)
-        left_layout.addWidget(settings_button)
         
         left_layout.addStretch()
         splitter.addWidget(left_panel)
@@ -444,10 +376,6 @@ class MainWindow(QMainWindow):
         
         # Меню Файл
         file_menu = menubar.addMenu("Файл")
-        view_saved_action = QAction("Просмотр сохраненных результатов", self)
-        view_saved_action.triggered.connect(self.view_saved_results)
-        file_menu.addAction(view_saved_action)
-        
         export_action = QAction("Экспорт результатов", self)
         export_action.triggered.connect(lambda: self.export_results("md"))
         file_menu.addAction(export_action)
@@ -457,6 +385,27 @@ class MainWindow(QMainWindow):
         exit_action = QAction("Выход", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+        
+        # Меню Промты
+        prompts_menu = menubar.addMenu("Промты")
+        view_prompts_action = QAction("Просмотр промтов", self)
+        view_prompts_action.setShortcut("Ctrl+P")
+        view_prompts_action.triggered.connect(self.view_prompts)
+        prompts_menu.addAction(view_prompts_action)
+        
+        # Меню Модели
+        models_menu = menubar.addMenu("Модели")
+        view_models_action = QAction("Просмотр моделей", self)
+        view_models_action.setShortcut("Ctrl+M")
+        view_models_action.triggered.connect(self.view_models)
+        models_menu.addAction(view_models_action)
+        
+        # Меню Результаты
+        results_menu = menubar.addMenu("Результаты")
+        view_results_action = QAction("Просмотр результатов", self)
+        view_results_action.setShortcut("Ctrl+R")
+        view_results_action.triggered.connect(self.view_saved_results)
+        results_menu.addAction(view_results_action)
         
         # Меню Настройки
         settings_menu = menubar.addMenu("Настройки")
@@ -480,97 +429,6 @@ class MainWindow(QMainWindow):
             display_text = prompt["prompt"][:50] + ("..." if len(prompt["prompt"]) > 50 else "")
             self.prompt_combo.addItem(display_text, prompt["id"])
     
-    def filter_prompts(self):
-        """Фильтрация промтов по поисковому запросу."""
-        query = self.prompt_search_edit.text()
-        if not query:
-            self.load_prompts()
-            return
-        
-        prompts = self.db.search_prompts(query)
-        self.prompt_combo.clear()
-        for prompt in prompts:
-            display_text = prompt["prompt"][:50] + ("..." if len(prompt["prompt"]) > 50 else "")
-            self.prompt_combo.addItem(display_text, prompt["id"])
-    
-    def save_current_prompt(self):
-        """Сохранить текущий промт в БД."""
-        prompt_text = self.prompt_edit.toPlainText().strip()
-        if not prompt_text:
-            QMessageBox.warning(
-                self, 
-                "Ошибка валидации", 
-                "Введите промт для сохранения!\n\nПоле промта не может быть пустым."
-            )
-            return
-        
-        if len(prompt_text) < 3:
-            QMessageBox.warning(
-                self,
-                "Ошибка валидации",
-                "Промт слишком короткий!\n\nМинимальная длина промта - 3 символа."
-            )
-            return
-        
-        tags = self.tags_edit.text().strip()
-        try:
-            self.db.add_prompt(prompt_text, tags if tags else None)
-            self.load_prompts()
-            QMessageBox.information(self, "Успех", "Промт сохранен!")
-            self.logger.log_info(f"Промт сохранен: {prompt_text[:50]}...")
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить промт: {str(e)}")
-            self.logger.log_error("Ошибка сохранения промта", e)
-    
-    def load_models(self):
-        """Загрузить список моделей в таблицу."""
-        models = self.db.get_models()
-        self.models_table.setRowCount(len(models))
-        
-        for row, model in enumerate(models):
-            # Чекбокс активности
-            checkbox = QCheckBox()
-            checkbox.setChecked(model["is_active"] == 1)
-            checkbox.stateChanged.connect(
-                lambda state, m_id=model["id"]: self.toggle_model_active(m_id, state)
-            )
-            self.models_table.setCellWidget(row, 0, checkbox)
-            
-            # Название
-            self.models_table.setItem(row, 1, QTableWidgetItem(model["name"]))
-            
-            # Тип
-            self.models_table.setItem(row, 2, QTableWidgetItem(model.get("model_type", "")))
-            
-            # Действия (заглушка, реальные действия через кнопки)
-            self.models_table.setItem(row, 3, QTableWidgetItem(""))
-    
-    def filter_models(self):
-        """Фильтрация моделей по поисковому запросу."""
-        query = self.model_search_edit.text()
-        if not query:
-            self.load_models()
-            return
-        
-        models = self.db.search_models(query)
-        self.models_table.setRowCount(len(models))
-        
-        for row, model in enumerate(models):
-            checkbox = QCheckBox()
-            checkbox.setChecked(model["is_active"] == 1)
-            checkbox.stateChanged.connect(
-                lambda state, m_id=model["id"]: self.toggle_model_active(m_id, state)
-            )
-            self.models_table.setCellWidget(row, 0, checkbox)
-            self.models_table.setItem(row, 1, QTableWidgetItem(model["name"]))
-            self.models_table.setItem(row, 2, QTableWidgetItem(model.get("model_type", "")))
-            self.models_table.setItem(row, 3, QTableWidgetItem(""))
-    
-    def toggle_model_active(self, model_id: int, state: int):
-        """Переключить активность модели."""
-        is_active = 1 if state == Qt.Checked else 0
-        self.db.set_model_active(model_id, is_active)
-    
     def on_prompt_changed(self, text: str):
         """Обработчик изменения выбранного промта."""
         index = self.prompt_combo.currentIndex()
@@ -580,7 +438,6 @@ class MainWindow(QMainWindow):
                 prompt = self.db.get_prompt_by_id(prompt_id)
                 if prompt:
                     self.prompt_edit.setText(prompt["prompt"])
-                    self.tags_edit.setText(prompt.get("tags", ""))
     
     def send_prompt(self):
         """Отправить промт во все активные модели."""
@@ -608,19 +465,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, 
                 "Ошибка", 
-                "Нет активных моделей!\n\nДобавьте и активируйте хотя бы одну модель в панели управления моделями."
+                "Нет активных моделей!\n\nДобавьте и активируйте хотя бы одну модель через меню 'Модели'."
             )
             return
         
         # Очистка временной таблицы
         self.new_request()
-        
-        # Сохранение промта в БД
-        tags = self.tags_edit.text().strip()
-        prompt_id = self.db.add_prompt(prompt_text, tags if tags else None)
-        
-        # Обновление списка промтов
-        self.load_prompts()
         
         # Показ индикатора загрузки
         self.progress_bar.setVisible(True)
@@ -629,6 +479,10 @@ class MainWindow(QMainWindow):
         
         # Логирование начала запроса
         self.logger.log_info(f"Отправка промта в {len(active_models)} активных моделей")
+        
+        # Примечание: промт НЕ сохраняется автоматически при отправке.
+        # Он будет сохранен только при явном сохранении через диалог "Промты"
+        # или при сохранении результатов (в методе save_selected_results)
         
         # Запуск потока для отправки запросов
         # Передаем путь к БД и список моделей, чтобы создать новое соединение в потоке
@@ -712,9 +566,8 @@ class MainWindow(QMainWindow):
                 break
         
         if not prompt_id:
-            # Создаем новый промт
-            tags = self.tags_edit.text().strip()
-            prompt_id = self.db.add_prompt(prompt_text, tags if tags else None)
+            # Создаем новый промт (без тегов, они будут добавлены позже в диалоге промтов)
+            prompt_id = self.db.add_prompt(prompt_text, None)
         
         # Сохраняем выбранные результаты
         saved_count = 0
@@ -740,7 +593,6 @@ class MainWindow(QMainWindow):
         self.temp_results = []
         self.results_table.setRowCount(0)
         self.prompt_edit.clear()
-        self.tags_edit.clear()
     
     def export_results(self, format_type: str = "md"):
         """Экспорт результатов в Markdown или JSON."""
@@ -822,192 +674,6 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Ошибка", f"Не удалось экспортировать: {str(e)}")
             self.logger.log_error("Ошибка экспорта в JSON", e)
     
-    def add_model(self):
-        """Добавить новую модель."""
-        dialog = ModelDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            data = dialog.get_data()
-            
-            # Валидация данных
-            if not data["name"].strip():
-                QMessageBox.warning(self, "Ошибка валидации", "Название модели не может быть пустым!")
-                return
-            
-            if not data["api_url"].strip():
-                QMessageBox.warning(self, "Ошибка валидации", "API URL не может быть пустым!")
-                return
-            
-            if not data["api_id"].strip():
-                QMessageBox.warning(self, "Ошибка валидации", "API ID (имя переменной .env) не может быть пустым!")
-                return
-            
-            # Проверка формата URL
-            api_url = data["api_url"].strip()
-            if not (api_url.startswith("http://") or api_url.startswith("https://")):
-                QMessageBox.warning(
-                    self, 
-                    "Ошибка валидации", 
-                    "API URL должен начинаться с http:// или https://"
-                )
-                return
-            
-            # Специальная проверка для OpenRouter
-            model_type = data["model_type"].strip().lower()
-            if "openrouter" in model_type:
-                correct_url = "https://openrouter.ai/api/v1/chat/completions"
-                if api_url != correct_url and not api_url.endswith("/api/v1/chat/completions"):
-                    reply = QMessageBox.warning(
-                        self,
-                        "Предупреждение",
-                        f"Для OpenRouter рекомендуется использовать правильный API URL:\n\n"
-                        f"{correct_url}\n\n"
-                        f"Текущий URL: {api_url}\n\n"
-                        f"Продолжить с текущим URL?",
-                        QMessageBox.Yes | QMessageBox.No
-                    )
-                    if reply == QMessageBox.No:
-                        return
-            
-            # Проверка формата API ID (не должно быть слэшей - это не имя модели)
-            api_id = data["api_id"].strip()
-            if "/" in api_id or "\\" in api_id:
-                QMessageBox.warning(
-                    self,
-                    "Ошибка валидации",
-                    "API ID не должен содержать слэши!\n\n"
-                    "API ID - это имя переменной окружения из файла .env,\n"
-                    "а не имя модели.\n\n"
-                    "Примеры правильных значений:\n"
-                    "• OPENROUTER_API_KEY\n"
-                    "• OPENAI_API_KEY\n"
-                    "• DEEPSEEK_API_KEY\n\n"
-                    "Неправильно: meta-llama/llama-3.3-70b-instruct\n"
-                    "Правильно: OPENROUTER_API_KEY (и в .env должно быть: OPENROUTER_API_KEY=ваш_ключ)"
-                )
-                return
-            
-            # Проверка для OpenRouter: название должно содержать слэш
-            model_type = data["model_type"].strip().lower()
-            model_name = data["name"].strip()
-            if "openrouter" in model_type:
-                if "/" not in model_name:
-                    reply = QMessageBox.warning(
-                        self,
-                        "Предупреждение",
-                        "Для OpenRouter в поле 'Название' нужно указать ПОЛНЫЙ идентификатор модели!\n\n"
-                        "Формат: provider/model-name\n"
-                        "Примеры:\n"
-                        "• meta-llama/llama-3.3-70b-instruct\n"
-                        "• openai/gpt-4\n"
-                        "• mistralai/mistral-large\n\n"
-                        "Если вы указали просто название (например, 'Llama 3.3 70B'),\n"
-                        "замените его на полный идентификатор модели.\n\n"
-                        "Список моделей: https://openrouter.ai/models\n\n"
-                        "Продолжить с текущим названием?",
-                        QMessageBox.Yes | QMessageBox.No
-                    )
-                    if reply == QMessageBox.No:
-                        return
-            
-            # Проверка существования переменной окружения
-            import os
-            from dotenv import load_dotenv
-            load_dotenv()
-            
-            api_key = os.getenv(api_id)
-            if not api_key:
-                reply = QMessageBox.warning(
-                    self,
-                    "Предупреждение",
-                    f"Переменная окружения '{api_id}' не найдена в файле .env!\n\n"
-                    "Убедитесь, что:\n"
-                    f"1. Файл .env существует в корне проекта\n"
-                    f"2. В файле .env есть строка: {api_id}=ваш_ключ\n\n"
-                    "Продолжить добавление модели?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if reply == QMessageBox.No:
-                    return
-            
-            try:
-                self.db.add_model(
-                    data["name"].strip(),
-                    data["api_url"].strip(),
-                    data["api_id"].strip(),
-                    data["model_type"].strip() if data["model_type"].strip() else None,
-                    data["is_active"]
-                )
-                self.load_models()
-                QMessageBox.information(self, "Успех", "Модель добавлена!")
-                self.logger.log_info(f"Модель добавлена: {data['name']}")
-            except Exception as e:
-                error_msg = f"Не удалось добавить модель: {str(e)}"
-                QMessageBox.critical(self, "Ошибка", error_msg)
-                self.logger.log_error("Ошибка добавления модели", e)
-    
-    def edit_model(self):
-        """Редактировать выбранную модель."""
-        current_row = self.models_table.currentRow()
-        if current_row < 0:
-            QMessageBox.warning(self, "Предупреждение", "Выберите модель для редактирования!")
-            return
-        
-        model_name = self.models_table.item(current_row, 1).text()
-        models = self.db.get_models()
-        model_data = None
-        for model in models:
-            if model["name"] == model_name:
-                model_data = model
-                break
-        
-        if not model_data:
-            QMessageBox.warning(self, "Ошибка", "Модель не найдена!")
-            return
-        
-        dialog = ModelDialog(self, model_data)
-        if dialog.exec_() == QDialog.Accepted:
-            data = dialog.get_data()
-            try:
-                self.db.update_model(
-                    model_data["id"],
-                    name=data["name"],
-                    api_url=data["api_url"],
-                    api_id=data["api_id"],
-                    model_type=data["model_type"] if data["model_type"] else None,
-                    is_active=data["is_active"]
-                )
-                self.load_models()
-                QMessageBox.information(self, "Успех", "Модель обновлена!")
-            except Exception as e:
-                QMessageBox.critical(self, "Ошибка", f"Не удалось обновить модель: {str(e)}")
-    
-    def delete_model(self):
-        """Удалить выбранную модель."""
-        current_row = self.models_table.currentRow()
-        if current_row < 0:
-            QMessageBox.warning(self, "Предупреждение", "Выберите модель для удаления!")
-            return
-        
-        model_name = self.models_table.item(current_row, 1).text()
-        reply = QMessageBox.question(
-            self,
-            "Подтверждение",
-            f"Удалить модель '{model_name}'?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            models = self.db.get_models()
-            for model in models:
-                if model["name"] == model_name:
-                    try:
-                        self.db.delete_model(model["id"])
-                        self.load_models()
-                        QMessageBox.information(self, "Успех", "Модель удалена!")
-                    except Exception as e:
-                        QMessageBox.critical(self, "Ошибка", f"Не удалось удалить модель: {str(e)}")
-                    break
-    
     def load_settings(self):
         """Загрузить настройки из БД."""
         timeout = self.db.get_setting("timeout", "30")
@@ -1050,6 +716,18 @@ class MainWindow(QMainWindow):
         
         # Открываем диалог с markdown
         dialog = MarkdownViewDialog(self, model_name, response_text)
+        dialog.exec_()
+    
+    def view_prompts(self):
+        """Просмотр промтов из базы данных."""
+        dialog = PromptsDialog(self, self.db)
+        dialog.exec_()
+        # Обновляем список промтов после возможных изменений
+        self.load_prompts()
+    
+    def view_models(self):
+        """Просмотр моделей из базы данных."""
+        dialog = ModelsDialog(self, self.db)
         dialog.exec_()
     
     def view_saved_results(self):
@@ -1333,6 +1011,619 @@ class SavedResultsDialog(QDialog):
                 QMessageBox.critical(self, "Ошибка", f"Не удалось удалить результат: {str(e)}")
 
 
+class PromptsDialog(QDialog):
+    """Диалог для просмотра и управления промтами."""
+    
+    def __init__(self, parent=None, db: Database = None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Промты")
+        self.setModal(True)
+        self.resize(900, 600)
+        self.init_ui()
+    
+    def init_ui(self):
+        """Инициализация интерфейса диалога."""
+        layout = QVBoxLayout()
+        
+        # Поиск
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Поиск:"))
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Поиск по промтам или тегам...")
+        self.search_edit.textChanged.connect(self.filter_prompts)
+        search_layout.addWidget(self.search_edit)
+        layout.addLayout(search_layout)
+        
+        # Таблица промтов
+        self.prompts_table = QTableWidget()
+        self.prompts_table.setColumnCount(4)
+        self.prompts_table.setHorizontalHeaderLabels(["ID", "Дата", "Промт", "Теги"])
+        self.prompts_table.horizontalHeader().setStretchLastSection(True)
+        self.prompts_table.setWordWrap(True)
+        self.prompts_table.setAlternatingRowColors(True)
+        self.prompts_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.prompts_table.setSortingEnabled(True)
+        self.prompts_table.verticalHeader().setDefaultSectionSize(100)
+        self.prompts_table.verticalHeader().setMaximumSectionSize(250)
+        self.prompts_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        header = self.prompts_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.prompts_table.itemDoubleClicked.connect(self.edit_selected_prompt)
+        layout.addWidget(self.prompts_table)
+        
+        # Кнопки
+        buttons_layout = QHBoxLayout()
+        self.add_button = QPushButton("Добавить промт")
+        self.add_button.clicked.connect(self.add_new_prompt)
+        self.add_button.setToolTip("Добавить новый промт в базу данных")
+        self.edit_button = QPushButton("Редактировать")
+        self.edit_button.clicked.connect(self.edit_selected_prompt)
+        self.edit_button.setToolTip("Редактировать выбранный промт")
+        self.delete_button = QPushButton("Удалить")
+        self.delete_button.clicked.connect(self.delete_selected_prompt)
+        self.delete_button.setToolTip("Удалить выбранный промт из базы данных")
+        buttons_layout.addWidget(self.add_button)
+        buttons_layout.addWidget(self.edit_button)
+        buttons_layout.addWidget(self.delete_button)
+        buttons_layout.addStretch()
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        buttons_layout.addWidget(buttons)
+        
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+        
+        # Загружаем промты
+        self.load_prompts()
+    
+    def load_prompts(self):
+        """Загрузить промты из базы данных."""
+        prompts = self.db.get_prompts()
+        self.all_prompts = prompts
+        
+        self.prompts_table.setRowCount(len(prompts))
+        
+        for row, prompt in enumerate(prompts):
+            # ID
+            self.prompts_table.setItem(row, 0, QTableWidgetItem(str(prompt["id"])))
+            
+            # Дата
+            self.prompts_table.setItem(row, 1, QTableWidgetItem(prompt.get("date", "")))
+            
+            # Промт
+            prompt_text = prompt.get("prompt", "")
+            prompt_item = QTableWidgetItem(prompt_text)
+            prompt_item.setToolTip(prompt_text)
+            prompt_item.setData(Qt.UserRole, prompt)  # Сохраняем полные данные промта
+            self.prompts_table.setItem(row, 2, prompt_item)
+            
+            # Теги
+            tags = prompt.get("tags", "") or ""
+            self.prompts_table.setItem(row, 3, QTableWidgetItem(tags))
+    
+    def filter_prompts(self):
+        """Фильтрация промтов по поисковому запросу."""
+        query = self.search_edit.text().lower()
+        if not query:
+            self.load_prompts()
+            return
+        
+        # Фильтруем промты
+        filtered = []
+        for prompt in self.all_prompts:
+            prompt_text = prompt.get("prompt", "").lower()
+            tags = (prompt.get("tags", "") or "").lower()
+            
+            if query in prompt_text or query in tags:
+                filtered.append(prompt)
+        
+        # Обновляем таблицу
+        self.prompts_table.setRowCount(len(filtered))
+        
+        for row, prompt in enumerate(filtered):
+            self.prompts_table.setItem(row, 0, QTableWidgetItem(str(prompt["id"])))
+            self.prompts_table.setItem(row, 1, QTableWidgetItem(prompt.get("date", "")))
+            
+            prompt_text = prompt.get("prompt", "")
+            prompt_item = QTableWidgetItem(prompt_text)
+            prompt_item.setToolTip(prompt_text)
+            prompt_item.setData(Qt.UserRole, prompt)
+            self.prompts_table.setItem(row, 2, prompt_item)
+            
+            tags = prompt.get("tags", "") or ""
+            self.prompts_table.setItem(row, 3, QTableWidgetItem(tags))
+    
+    def add_new_prompt(self):
+        """Добавить новый промт."""
+        dialog = PromptEditDialog(self, self.db, None)
+        if dialog.exec_() == QDialog.Accepted:
+            self.load_prompts()
+            # Обновляем список промтов в главном окне, если оно открыто
+            if self.parent():
+                try:
+                    self.parent().load_prompts()
+                except:
+                    pass
+    
+    def edit_selected_prompt(self):
+        """Редактировать выбранный промт."""
+        current_row = self.prompts_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Предупреждение", "Выберите промт для редактирования!")
+            return
+        
+        prompt_item = self.prompts_table.item(current_row, 2)
+        if not prompt_item:
+            return
+        
+        prompt = prompt_item.data(Qt.UserRole)
+        if not prompt:
+            return
+        
+        # Создаем диалог редактирования
+        dialog = PromptEditDialog(self, self.db, prompt)
+        if dialog.exec_() == QDialog.Accepted:
+            self.load_prompts()
+            # Обновляем список промтов в главном окне, если оно открыто
+            if self.parent():
+                try:
+                    self.parent().load_prompts()
+                except:
+                    pass
+    
+    def delete_selected_prompt(self):
+        """Удалить выбранный промт из базы данных."""
+        current_row = self.prompts_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Предупреждение", "Выберите промт для удаления!")
+            return
+        
+        prompt_item = self.prompts_table.item(current_row, 2)
+        if not prompt_item:
+            return
+        
+        prompt = prompt_item.data(Qt.UserRole)
+        if not prompt:
+            return
+        
+        prompt_id = prompt.get("id")
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            f"Удалить промт '{prompt.get('prompt', '')[:50]}...' из базы данных?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                self.db.delete_prompt(prompt_id)
+                QMessageBox.information(self, "Успех", "Промт удален!")
+                self.load_prompts()
+                # Обновляем список промтов в главном окне, если оно открыто
+                if self.parent():
+                    try:
+                        self.parent().load_prompts()
+                    except:
+                        pass
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось удалить промт: {str(e)}")
+
+
+class PromptEditDialog(QDialog):
+    """Диалог для редактирования промта."""
+    
+    def __init__(self, parent=None, db: Database = None, prompt_data: Dict = None):
+        super().__init__(parent)
+        self.db = db
+        self.prompt_data = prompt_data
+        title = "Добавить промт" if prompt_data is None else "Редактировать промт"
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(600, 400)
+        self.init_ui()
+    
+    def init_ui(self):
+        """Инициализация интерфейса диалога."""
+        layout = QFormLayout()
+        
+        self.prompt_edit = QTextEdit()
+        if self.prompt_data:
+            self.prompt_edit.setPlainText(self.prompt_data.get("prompt", ""))
+        self.prompt_edit.setPlaceholderText("Введите текст промта...")
+        layout.addRow("Промт:", self.prompt_edit)
+        
+        self.tags_edit = QLineEdit()
+        if self.prompt_data:
+            self.tags_edit.setText(self.prompt_data.get("tags", "") or "")
+        self.tags_edit.setPlaceholderText("тег1, тег2, тег3")
+        layout.addRow("Теги:", self.tags_edit)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.save_prompt)
+        buttons.rejected.connect(self.reject)
+        # Изменяем текст кнопки OK на "Сохранить"
+        ok_button = buttons.button(QDialogButtonBox.Ok)
+        ok_button.setText("Сохранить")
+        layout.addRow(buttons)
+        
+        self.setLayout(layout)
+    
+    def save_prompt(self):
+        """Сохранить промт (создать новый или обновить существующий)."""
+        prompt_text = self.prompt_edit.toPlainText().strip()
+        if not prompt_text:
+            QMessageBox.warning(self, "Ошибка", "Промт не может быть пустым!")
+            return
+        
+        if len(prompt_text) < 3:
+            QMessageBox.warning(
+                self,
+                "Ошибка валидации",
+                "Промт слишком короткий!\n\nМинимальная длина промта - 3 символа."
+            )
+            return
+        
+        tags = self.tags_edit.text().strip() or None
+        
+        try:
+            if self.prompt_data is None:
+                # Создание нового промта
+                self.db.add_prompt(prompt_text, tags)
+                QMessageBox.information(self, "Успех", "Промт добавлен!")
+            else:
+                # Обновление существующего промта
+                self.db.update_prompt(
+                    self.prompt_data["id"],
+                    prompt=prompt_text,
+                    tags=tags
+                )
+                QMessageBox.information(self, "Успех", "Промт обновлен!")
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить промт: {str(e)}")
+
+
+class ModelsDialog(QDialog):
+    """Диалог для просмотра и управления моделями."""
+    
+    def __init__(self, parent=None, db: Database = None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Модели")
+        self.setModal(True)
+        self.resize(1000, 600)
+        self.init_ui()
+    
+    def init_ui(self):
+        """Инициализация интерфейса диалога."""
+        layout = QVBoxLayout()
+        
+        # Поиск
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Поиск:"))
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Поиск по названию или типу модели...")
+        self.search_edit.textChanged.connect(self.filter_models)
+        search_layout.addWidget(self.search_edit)
+        layout.addLayout(search_layout)
+        
+        # Таблица моделей
+        self.models_table = QTableWidget()
+        self.models_table.setColumnCount(5)
+        self.models_table.setHorizontalHeaderLabels(["Активна", "Название", "Тип", "API URL", "Дата создания"])
+        self.models_table.horizontalHeader().setStretchLastSection(False)
+        self.models_table.setWordWrap(True)
+        self.models_table.setAlternatingRowColors(True)
+        self.models_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.models_table.setSortingEnabled(True)
+        header = self.models_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.models_table.itemDoubleClicked.connect(self.edit_selected_model)
+        layout.addWidget(self.models_table)
+        
+        # Кнопки
+        buttons_layout = QHBoxLayout()
+        self.add_button = QPushButton("Добавить модель")
+        self.add_button.clicked.connect(self.add_model)
+        self.add_button.setToolTip("Добавить новую модель нейросети")
+        self.edit_button = QPushButton("Редактировать")
+        self.edit_button.clicked.connect(self.edit_selected_model)
+        self.edit_button.setToolTip("Редактировать выбранную модель")
+        self.delete_button = QPushButton("Удалить")
+        self.delete_button.clicked.connect(self.delete_selected_model)
+        self.delete_button.setToolTip("Удалить выбранную модель из базы данных")
+        buttons_layout.addWidget(self.add_button)
+        buttons_layout.addWidget(self.edit_button)
+        buttons_layout.addWidget(self.delete_button)
+        buttons_layout.addStretch()
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        buttons_layout.addWidget(buttons)
+        
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+        
+        # Загружаем модели
+        self.load_models()
+    
+    def load_models(self):
+        """Загрузить модели из базы данных."""
+        models = self.db.get_models()
+        self.all_models = models
+        
+        self.models_table.setRowCount(len(models))
+        
+        for row, model in enumerate(models):
+            # Чекбокс активности
+            checkbox = QCheckBox()
+            checkbox.setChecked(model["is_active"] == 1)
+            checkbox.stateChanged.connect(
+                lambda state, m_id=model["id"]: self.toggle_model_active(m_id, state)
+            )
+            self.models_table.setCellWidget(row, 0, checkbox)
+            
+            # Название
+            name_item = QTableWidgetItem(model.get("name", ""))
+            name_item.setData(Qt.UserRole, model)  # Сохраняем полные данные модели
+            self.models_table.setItem(row, 1, name_item)
+            
+            # Тип
+            self.models_table.setItem(row, 2, QTableWidgetItem(model.get("model_type", "")))
+            
+            # API URL (усеченный)
+            api_url = model.get("api_url", "")
+            api_url_display = api_url[:50] + ("..." if len(api_url) > 50 else "")
+            url_item = QTableWidgetItem(api_url_display)
+            url_item.setToolTip(api_url)
+            self.models_table.setItem(row, 3, url_item)
+            
+            # Дата создания
+            self.models_table.setItem(row, 4, QTableWidgetItem(model.get("created_at", "")))
+    
+    def filter_models(self):
+        """Фильтрация моделей по поисковому запросу."""
+        query = self.search_edit.text().lower()
+        if not query:
+            self.load_models()
+            return
+        
+        # Фильтруем модели
+        filtered = []
+        for model in self.all_models:
+            name = model.get("name", "").lower()
+            model_type = (model.get("model_type", "") or "").lower()
+            
+            if query in name or query in model_type:
+                filtered.append(model)
+        
+        # Обновляем таблицу
+        self.models_table.setRowCount(len(filtered))
+        
+        for row, model in enumerate(filtered):
+            # Чекбокс активности
+            checkbox = QCheckBox()
+            checkbox.setChecked(model["is_active"] == 1)
+            checkbox.stateChanged.connect(
+                lambda state, m_id=model["id"]: self.toggle_model_active(m_id, state)
+            )
+            self.models_table.setCellWidget(row, 0, checkbox)
+            
+            name_item = QTableWidgetItem(model.get("name", ""))
+            name_item.setData(Qt.UserRole, model)
+            self.models_table.setItem(row, 1, name_item)
+            
+            self.models_table.setItem(row, 2, QTableWidgetItem(model.get("model_type", "")))
+            
+            api_url = model.get("api_url", "")
+            api_url_display = api_url[:50] + ("..." if len(api_url) > 50 else "")
+            url_item = QTableWidgetItem(api_url_display)
+            url_item.setToolTip(api_url)
+            self.models_table.setItem(row, 3, url_item)
+            
+            self.models_table.setItem(row, 4, QTableWidgetItem(model.get("created_at", "")))
+    
+    def edit_selected_model(self):
+        """Редактировать выбранную модель."""
+        current_row = self.models_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Предупреждение", "Выберите модель для редактирования!")
+            return
+        
+        name_item = self.models_table.item(current_row, 1)
+        if not name_item:
+            return
+        
+        model = name_item.data(Qt.UserRole)
+        if not model:
+            return
+        
+        # Используем существующий ModelDialog
+        dialog = ModelDialog(self, model)
+        if dialog.exec_() == QDialog.Accepted:
+            model_data = dialog.get_data()
+            try:
+                self.db.update_model(
+                    model["id"],
+                    name=model_data["name"],
+                    api_url=model_data["api_url"],
+                    api_id=model_data["api_id"],
+                    model_type=model_data["model_type"],
+                    is_active=model_data["is_active"]
+                )
+                QMessageBox.information(self, "Успех", "Модель обновлена!")
+                self.load_models()
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось обновить модель: {str(e)}")
+    
+    def delete_selected_model(self):
+        """Удалить выбранную модель из базы данных."""
+        current_row = self.models_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Предупреждение", "Выберите модель для удаления!")
+            return
+        
+        name_item = self.models_table.item(current_row, 1)
+        if not name_item:
+            return
+        
+        model = name_item.data(Qt.UserRole)
+        if not model:
+            return
+        
+        model_id = model.get("id")
+        model_name = model.get("name", "")
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            f"Удалить модель '{model_name}' из базы данных?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                self.db.delete_model(model_id)
+                QMessageBox.information(self, "Успех", "Модель удалена!")
+                self.load_models()
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось удалить модель: {str(e)}")
+    
+    def toggle_model_active(self, model_id: int, state: int):
+        """Переключить активность модели."""
+        is_active = 1 if state == Qt.Checked else 0
+        self.db.set_model_active(model_id, is_active)
+    
+    def add_model(self):
+        """Добавить новую модель."""
+        dialog = ModelDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            
+            # Валидация данных
+            if not data["name"].strip():
+                QMessageBox.warning(self, "Ошибка валидации", "Название модели не может быть пустым!")
+                return
+            
+            if not data["api_url"].strip():
+                QMessageBox.warning(self, "Ошибка валидации", "API URL не может быть пустым!")
+                return
+            
+            if not data["api_id"].strip():
+                QMessageBox.warning(self, "Ошибка валидации", "API ID (имя переменной .env) не может быть пустым!")
+                return
+            
+            # Проверка формата URL
+            api_url = data["api_url"].strip()
+            if not (api_url.startswith("http://") or api_url.startswith("https://")):
+                QMessageBox.warning(
+                    self, 
+                    "Ошибка валидации", 
+                    "API URL должен начинаться с http:// или https://"
+                )
+                return
+            
+            # Специальная проверка для OpenRouter
+            model_type = data["model_type"].strip().lower()
+            if "openrouter" in model_type:
+                correct_url = "https://openrouter.ai/api/v1/chat/completions"
+                if api_url != correct_url and not api_url.endswith("/api/v1/chat/completions"):
+                    reply = QMessageBox.warning(
+                        self,
+                        "Предупреждение",
+                        f"Для OpenRouter рекомендуется использовать правильный API URL:\n\n"
+                        f"{correct_url}\n\n"
+                        f"Текущий URL: {api_url}\n\n"
+                        f"Продолжить с текущим URL?",
+                        QMessageBox.Yes | QMessageBox.No
+                    )
+                    if reply == QMessageBox.No:
+                        return
+            
+            # Проверка формата API ID (не должно быть слэшей - это не имя модели)
+            api_id = data["api_id"].strip()
+            if "/" in api_id or "\\" in api_id:
+                QMessageBox.warning(
+                    self,
+                    "Ошибка валидации",
+                    "API ID не должен содержать слэши!\n\n"
+                    "API ID - это имя переменной окружения из файла .env,\n"
+                    "а не имя модели.\n\n"
+                    "Примеры правильных значений:\n"
+                    "• OPENROUTER_API_KEY\n"
+                    "• OPENAI_API_KEY\n"
+                    "• DEEPSEEK_API_KEY\n\n"
+                    "Неправильно: meta-llama/llama-3.3-70b-instruct\n"
+                    "Правильно: OPENROUTER_API_KEY (и в .env должно быть: OPENROUTER_API_KEY=ваш_ключ)"
+                )
+                return
+            
+            # Проверка для OpenRouter: название должно содержать слэш
+            model_type = data["model_type"].strip().lower()
+            model_name = data["name"].strip()
+            if "openrouter" in model_type:
+                if "/" not in model_name:
+                    reply = QMessageBox.warning(
+                        self,
+                        "Предупреждение",
+                        "Для OpenRouter в поле 'Название' нужно указать ПОЛНЫЙ идентификатор модели!\n\n"
+                        "Формат: provider/model-name\n"
+                        "Примеры:\n"
+                        "• meta-llama/llama-3.3-70b-instruct\n"
+                        "• openai/gpt-4\n"
+                        "• mistralai/mistral-large\n\n"
+                        "Если вы указали просто название (например, 'Llama 3.3 70B'),\n"
+                        "замените его на полный идентификатор модели.\n\n"
+                        "Список моделей: https://openrouter.ai/models\n\n"
+                        "Продолжить с текущим названием?",
+                        QMessageBox.Yes | QMessageBox.No
+                    )
+                    if reply == QMessageBox.No:
+                        return
+            
+            # Проверка существования переменной окружения
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            
+            api_key = os.getenv(api_id)
+            if not api_key:
+                reply = QMessageBox.warning(
+                    self,
+                    "Предупреждение",
+                    f"Переменная окружения '{api_id}' не найдена в файле .env!\n\n"
+                    "Убедитесь, что:\n"
+                    f"1. Файл .env существует в корне проекта\n"
+                    f"2. В файле .env есть строка: {api_id}=ваш_ключ\n\n"
+                    "Продолжить добавление модели?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply == QMessageBox.No:
+                    return
+            
+            try:
+                self.db.add_model(
+                    data["name"].strip(),
+                    data["api_url"].strip(),
+                    data["api_id"].strip(),
+                    data["model_type"].strip() if data["model_type"].strip() else None,
+                    data["is_active"]
+                )
+                QMessageBox.information(self, "Успех", "Модель добавлена!")
+                self.load_models()
+            except Exception as e:
+                error_msg = f"Не удалось добавить модель: {str(e)}"
+                QMessageBox.critical(self, "Ошибка", error_msg)
+
+
 class SettingsDialog(QDialog):
     """Диалог настроек программы."""
     
@@ -1355,6 +1646,9 @@ class SettingsDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.save_settings)
         buttons.rejected.connect(self.reject)
+        # Изменяем текст кнопки OK на "Сохранить"
+        ok_button = buttons.button(QDialogButtonBox.Ok)
+        ok_button.setText("Сохранить")
         layout.addRow(buttons)
         
         self.setLayout(layout)
