@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QButtonGroup
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QIcon
 from typing import List, Dict, Optional
 import json
 
@@ -602,6 +602,15 @@ class MainWindow(QMainWindow):
         """Инициализация интерфейса."""
         self.setWindowTitle("ChatList - Сравнение ответов нейросетей")
         self.setGeometry(100, 100, 1200, 800)
+        
+        # Установка иконки приложения
+        try:
+            icon = QIcon('app.ico')
+            if not icon.isNull():
+                self.setWindowIcon(icon)
+        except Exception:
+            # Если иконка не найдена, просто пропускаем
+            pass
         
         # Центральный виджет
         central_widget = QWidget()
