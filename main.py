@@ -9,7 +9,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QLabel, QTextEdit, QComboBox, QTableWidget, QTableWidgetItem,
     QCheckBox, QLineEdit, QMessageBox, QHeaderView, QProgressBar,
     QSplitter, QGroupBox, QDialog, QFormLayout, QDialogButtonBox,
-    QFileDialog, QMenuBar, QMenu, QAction, QScrollArea
+    QFileDialog, QMenuBar, QMenu, QAction, QScrollArea, QRadioButton,
+    QButtonGroup
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -19,6 +20,7 @@ import json
 from db import Database
 from models import ModelHandler, APIError
 from logger import Logger
+from prompt_improver import PromptImprover
 
 
 class SendPromptThread(QThread):
@@ -70,6 +72,356 @@ class SendPromptThread(QThread):
         db.close()
         
         self.finished.emit()
+
+
+class ImprovePromptThread(QThread):
+    """Поток для асинхронного улучшения промта."""
+    
+    result_received = pyqtSignal(dict)  # result dictionary
+    error_occurred = pyqtSignal(str)  # error message
+    finished = pyqtSignal()
+    
+    def __init__(self, db_path: str, model: Dict, original_prompt: str, 
+                 improvement_type: str = "general", logger=None):
+        super().__init__()
+        self.db_path = db_path
+        self.model = model
+        self.original_prompt = original_prompt
+        self.improvement_type = improvement_type
+        self.logger = logger
+    
+    def run(self):
+        """Запуск улучшения промта."""
+        # Создаем новое соединение с БД в рабочем потоке
+        from db import Database
+        from prompt_improver import PromptImprover
+        
+        db = Database(self.db_path)
+        improver = PromptImprover(db)
+        
+        try:
+            result = improver.improve_prompt(
+                self.original_prompt,
+                self.model,
+                self.improvement_type
+            )
+            self.result_received.emit(result)
+            
+            if self.logger:
+                self.logger.log_info(
+                    f"Промт улучшен с помощью модели {self.model.get('name', 'Unknown')}"
+                )
+        except Exception as e:
+            error_msg = str(e)
+            self.error_occurred.emit(error_msg)
+            
+            if self.logger:
+                self.logger.log_error("Ошибка при улучшении промта", e)
+        finally:
+            improver.close()
+            db.close()
+            self.finished.emit()
+
+
+class PromptImprovementDialog(QDialog):
+    """Диалог для улучшения промтов."""
+    
+    def __init__(self, parent=None, original_prompt: str = "", db: Database = None, 
+                 logger: Logger = None):
+        super().__init__(parent)
+        self.original_prompt = original_prompt
+        self.db = db or Database()
+        self.logger = logger
+        self.improvement_thread = None
+        self.selected_text = None
+        self.db_path = self.db.db_path
+        
+        self.setWindowTitle("Улучшение промта с помощью AI")
+        self.setModal(True)
+        self.resize(800, 700)
+        self.init_ui()
+        self.load_models()
+    
+    def init_ui(self):
+        """Инициализация интерфейса диалога."""
+        layout = QVBoxLayout()
+        
+        # Выбор модели
+        model_group = QGroupBox("Выбор модели для улучшения")
+        model_layout = QVBoxLayout()
+        self.model_combo = QComboBox()
+        self.model_combo.setToolTip("Выберите модель для улучшения промта")
+        model_layout.addWidget(QLabel("Модель:"))
+        model_layout.addWidget(self.model_combo)
+        model_group.setLayout(model_layout)
+        layout.addWidget(model_group)
+        
+        # Тип улучшения
+        type_group = QGroupBox("Тип улучшения")
+        type_layout = QVBoxLayout()
+        self.type_button_group = QButtonGroup(self)
+        
+        self.type_general = QRadioButton("Общее улучшение")
+        self.type_general.setChecked(True)
+        self.type_general.setToolTip("Общее улучшение промта для любой задачи")
+        self.type_button_group.addButton(self.type_general, 0)
+        type_layout.addWidget(self.type_general)
+        
+        self.type_code = QRadioButton("Для программирования")
+        self.type_code.setToolTip("Специализированное улучшение для задач программирования")
+        self.type_button_group.addButton(self.type_code, 1)
+        type_layout.addWidget(self.type_code)
+        
+        self.type_analysis = QRadioButton("Для анализа")
+        self.type_analysis.setToolTip("Специализированное улучшение для аналитических задач")
+        self.type_button_group.addButton(self.type_analysis, 2)
+        type_layout.addWidget(self.type_analysis)
+        
+        self.type_creative = QRadioButton("Для творческих задач")
+        self.type_creative.setToolTip("Специализированное улучшение для творческих задач")
+        self.type_button_group.addButton(self.type_creative, 3)
+        type_layout.addWidget(self.type_creative)
+        
+        type_group.setLayout(type_layout)
+        layout.addWidget(type_group)
+        
+        # Исходный промт
+        original_group = QGroupBox("Исходный промт")
+        original_layout = QVBoxLayout()
+        self.original_text = QTextEdit()
+        self.original_text.setPlainText(self.original_prompt)
+        self.original_text.setReadOnly(True)
+        self.original_text.setMaximumHeight(100)
+        self.original_text.setToolTip("Исходный промт (только для чтения)")
+        original_layout.addWidget(self.original_text)
+        original_group.setLayout(original_layout)
+        layout.addWidget(original_group)
+        
+        # Кнопка улучшения
+        improve_button = QPushButton("Улучшить промт")
+        improve_button.clicked.connect(self.start_improvement)
+        improve_button.setToolTip("Начать улучшение промта с помощью выбранной модели")
+        layout.addWidget(improve_button)
+        
+        # Индикатор загрузки
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 0)  # Неопределенный прогресс
+        layout.addWidget(self.progress_bar)
+        
+        # Результаты
+        results_group = QGroupBox("Результаты улучшения")
+        results_layout = QVBoxLayout()
+        
+        # Улучшенная версия
+        improved_label = QLabel("Улучшенная версия:")
+        results_layout.addWidget(improved_label)
+        self.improved_text = QTextEdit()
+        self.improved_text.setReadOnly(True)
+        self.improved_text.setMaximumHeight(120)
+        self.improved_text.setPlaceholderText("Здесь появится улучшенная версия промта...")
+        results_layout.addWidget(self.improved_text)
+        
+        # Кнопка подстановки улучшенной версии
+        self.use_improved_button = QPushButton("Подставить улучшенную версию")
+        self.use_improved_button.clicked.connect(lambda: self.select_text("improved"))
+        self.use_improved_button.setEnabled(False)
+        self.use_improved_button.setToolTip("Подставить улучшенную версию в поле ввода")
+        results_layout.addWidget(self.use_improved_button)
+        
+        # Кнопка копирования улучшенной версии
+        copy_improved_button = QPushButton("Копировать")
+        copy_improved_button.clicked.connect(lambda: self.copy_to_clipboard("improved"))
+        copy_improved_button.setToolTip("Копировать улучшенную версию в буфер обмена")
+        results_layout.addWidget(copy_improved_button)
+        
+        results_layout.addWidget(QLabel(""))  # Разделитель
+        
+        # Альтернативные варианты
+        variants_label = QLabel("Альтернативные варианты:")
+        results_layout.addWidget(variants_label)
+        self.variants_widget = QWidget()
+        self.variants_layout = QVBoxLayout()
+        self.variants_widget.setLayout(self.variants_layout)
+        self.variants_scroll = QScrollArea()
+        self.variants_scroll.setWidget(self.variants_widget)
+        self.variants_scroll.setWidgetResizable(True)
+        self.variants_scroll.setMaximumHeight(200)
+        results_layout.addWidget(self.variants_scroll)
+        
+        results_group.setLayout(results_layout)
+        layout.addWidget(results_group)
+        
+        # Объяснение
+        explanation_label = QLabel("Объяснение улучшений:")
+        layout.addWidget(explanation_label)
+        self.explanation_text = QTextEdit()
+        self.explanation_text.setReadOnly(True)
+        self.explanation_text.setMaximumHeight(80)
+        self.explanation_text.setPlaceholderText("Здесь появится объяснение улучшений...")
+        layout.addWidget(self.explanation_text)
+        
+        # Кнопки
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        ok_button = buttons.button(QDialogButtonBox.Ok)
+        ok_button.setText("Подставить выбранный")
+        layout.addWidget(buttons)
+        
+        self.setLayout(layout)
+    
+    def load_models(self):
+        """Загрузить список активных моделей."""
+        models = self.db.get_models(active_only=True)
+        self.model_combo.clear()
+        
+        for model in models:
+            self.model_combo.addItem(model["name"], model)
+        
+        if self.model_combo.count() == 0:
+            self.model_combo.addItem("Нет активных моделей", None)
+    
+    def get_improvement_type(self) -> str:
+        """Получить выбранный тип улучшения."""
+        if self.type_code.isChecked():
+            return "code"
+        elif self.type_analysis.isChecked():
+            return "analysis"
+        elif self.type_creative.isChecked():
+            return "creative"
+        else:
+            return "general"
+    
+    def start_improvement(self):
+        """Начать улучшение промта."""
+        original = self.original_text.toPlainText().strip()
+        if not original:
+            QMessageBox.warning(self, "Ошибка", "Исходный промт не может быть пустым!")
+            return
+        
+        model_data = self.model_combo.currentData()
+        if not model_data:
+            QMessageBox.warning(self, "Ошибка", "Выберите модель для улучшения!")
+            return
+        
+        improvement_type = self.get_improvement_type()
+        
+        # Блокируем UI
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        
+        # Очищаем предыдущие результаты
+        self.improved_text.clear()
+        self.explanation_text.clear()
+        self.clear_variants()
+        
+        # Создаем поток
+        self.improvement_thread = ImprovePromptThread(
+            self.db_path,
+            model_data,
+            original,
+            improvement_type,
+            self.logger
+        )
+        self.improvement_thread.result_received.connect(self.on_result_received)
+        self.improvement_thread.error_occurred.connect(self.on_error_occurred)
+        self.improvement_thread.finished.connect(self.on_finished)
+        self.improvement_thread.start()
+    
+    def on_result_received(self, result: Dict):
+        """Обработчик получения результата."""
+        # Улучшенная версия
+        improved = result.get("improved", "")
+        self.improved_text.setPlainText(improved)
+        self.use_improved_button.setEnabled(True)
+        
+        # Объяснение
+        explanation = result.get("explanation", "")
+        self.explanation_text.setPlainText(explanation)
+        
+        # Варианты
+        variants = result.get("variants", [])
+        self.display_variants(variants)
+    
+    def display_variants(self, variants: List[str]):
+        """Отобразить альтернативные варианты."""
+        self.clear_variants()
+        
+        for i, variant in enumerate(variants, 1):
+            variant_group = QGroupBox(f"Вариант {i}")
+            variant_layout = QVBoxLayout()
+            
+            variant_text = QTextEdit()
+            variant_text.setPlainText(variant)
+            variant_text.setReadOnly(True)
+            variant_text.setMaximumHeight(80)
+            variant_layout.addWidget(variant_text)
+            
+            buttons_layout = QHBoxLayout()
+            use_button = QPushButton("Подставить")
+            use_button.clicked.connect(
+                lambda checked, text=variant: self.select_text("variant", text)
+            )
+            use_button.setToolTip(f"Подставить вариант {i} в поле ввода")
+            buttons_layout.addWidget(use_button)
+            
+            copy_button = QPushButton("Копировать")
+            copy_button.clicked.connect(
+                lambda checked, text=variant: self.copy_to_clipboard("variant", text)
+            )
+            copy_button.setToolTip(f"Копировать вариант {i} в буфер обмена")
+            buttons_layout.addWidget(copy_button)
+            
+            variant_layout.addLayout(buttons_layout)
+            variant_group.setLayout(variant_layout)
+            self.variants_layout.addWidget(variant_group)
+    
+    def clear_variants(self):
+        """Очистить список вариантов."""
+        while self.variants_layout.count():
+            item = self.variants_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+    
+    def select_text(self, text_type: str, text: str = None):
+        """Выбрать текст для подстановки."""
+        if text_type == "improved":
+            self.selected_text = self.improved_text.toPlainText()
+        elif text_type == "variant" and text:
+            self.selected_text = text
+        else:
+            return
+        
+        # Закрываем диалог с результатом
+        self.accept()
+    
+    def copy_to_clipboard(self, text_type: str, text: str = None):
+        """Копировать текст в буфер обмена."""
+        from PyQt5.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        
+        if text_type == "improved":
+            clipboard.setText(self.improved_text.toPlainText())
+        elif text_type == "variant" and text:
+            clipboard.setText(text)
+        else:
+            return
+        
+        QMessageBox.information(self, "Скопировано", "Текст скопирован в буфер обмена!")
+    
+    def on_error_occurred(self, error_msg: str):
+        """Обработчик ошибки."""
+        QMessageBox.critical(self, "Ошибка", f"Не удалось улучшить промт:\n\n{error_msg}")
+    
+    def on_finished(self):
+        """Обработчик завершения работы потока."""
+        self.progress_bar.setVisible(False)
+        self.improvement_thread = None
+    
+    def get_selected_text(self) -> Optional[str]:
+        """Получить выбранный текст."""
+        return self.selected_text
 
 
 class ModelDialog(QDialog):
@@ -287,11 +639,19 @@ class MainWindow(QMainWindow):
         self.prompt_edit.setToolTip("Введите текст запроса, который будет отправлен во все активные модели")
         prompt_layout.addWidget(self.prompt_edit)
         
-        # Кнопка отправки
+        # Кнопки отправки и улучшения
+        buttons_layout = QHBoxLayout()
         self.send_button = QPushButton("Отправить запрос")
         self.send_button.clicked.connect(self.send_prompt)
         self.send_button.setToolTip("Отправить промт во все активные модели")
-        prompt_layout.addWidget(self.send_button)
+        buttons_layout.addWidget(self.send_button)
+        
+        self.improve_button = QPushButton("Улучшить промт")
+        self.improve_button.clicked.connect(self.open_improve_dialog)
+        self.improve_button.setToolTip("Улучшить промт с помощью AI-ассистента")
+        buttons_layout.addWidget(self.improve_button)
+        
+        prompt_layout.addLayout(buttons_layout)
         
         prompt_group.setLayout(prompt_layout)
         left_layout.addWidget(prompt_group)
@@ -438,6 +798,43 @@ class MainWindow(QMainWindow):
                 prompt = self.db.get_prompt_by_id(prompt_id)
                 if prompt:
                     self.prompt_edit.setText(prompt["prompt"])
+    
+    def open_improve_dialog(self):
+        """Открыть диалог улучшения промта."""
+        original_prompt = self.prompt_edit.toPlainText().strip()
+        
+        if not original_prompt:
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                "Поле промта пустое!\n\nВведите промт перед улучшением."
+            )
+            return
+        
+        # Проверяем наличие активных моделей
+        active_models = self.db.get_models(active_only=True)
+        if not active_models:
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                "Нет активных моделей!\n\nДобавьте и активируйте хотя бы одну модель для улучшения промта."
+            )
+            return
+        
+        # Создаем и открываем диалог
+        dialog = PromptImprovementDialog(
+            parent=self,
+            original_prompt=original_prompt,
+            db=self.db,
+            logger=self.logger
+        )
+        
+        if dialog.exec_() == QDialog.Accepted:
+            selected_text = dialog.get_selected_text()
+            if selected_text:
+                # Подставляем выбранный текст в поле ввода
+                self.prompt_edit.setPlainText(selected_text)
+                self.logger.log_info("Улучшенный промт подставлен в поле ввода")
     
     def send_prompt(self):
         """Отправить промт во все активные модели."""
