@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QLineEdit, QMessageBox, QHeaderView, QProgressBar,
     QSplitter, QGroupBox, QDialog, QFormLayout, QDialogButtonBox,
     QFileDialog, QMenuBar, QMenu, QAction, QScrollArea, QRadioButton,
-    QButtonGroup
+    QButtonGroup, QSpinBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon
@@ -1083,23 +1083,174 @@ class MainWindow(QMainWindow):
     def load_settings(self):
         """Загрузить настройки из БД."""
         timeout = self.db.get_setting("timeout", "30")
-        # Можно добавить применение настроек к интерфейсу
+        
+        # Загрузка темы
+        theme = self.db.get_setting("theme", "light")
+        self.apply_theme(theme)
+        
+        # Загрузка размера шрифта
+        font_size_str = self.db.get_setting("font_size", "10")
+        try:
+            font_size = int(font_size_str)
+            self.apply_font_size(font_size)
+        except (ValueError, TypeError):
+            pass
+    
+    def apply_theme(self, theme: str):
+        """
+        Применить тему к приложению.
+        
+        Args:
+            theme: Название темы ("light" или "dark")
+        """
+        app = QApplication.instance()
+        if not app:
+            return
+        
+        if theme == "dark":
+            # Темная тема
+            dark_stylesheet = """
+            QMainWindow {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QWidget {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QTextEdit, QLineEdit, QComboBox {
+                background-color: #3c3c3c;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+            QPushButton {
+                background-color: #404040;
+                color: #ffffff;
+                border: 1px solid #555555;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #505050;
+            }
+            QPushButton:pressed {
+                background-color: #353535;
+            }
+            QTableWidget {
+                background-color: #3c3c3c;
+                color: #ffffff;
+                gridline-color: #555555;
+            }
+            QHeaderView::section {
+                background-color: #404040;
+                color: #ffffff;
+                padding: 5px;
+                border: 1px solid #555555;
+            }
+            QGroupBox {
+                color: #ffffff;
+                border: 1px solid #555555;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+            QMenuBar {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QMenuBar::item:selected {
+                background-color: #404040;
+            }
+            QMenu {
+                background-color: #3c3c3c;
+                color: #ffffff;
+            }
+            QMenu::item:selected {
+                background-color: #505050;
+            }
+            QDialog {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QProgressBar {
+                border: 1px solid #555555;
+                border-radius: 3px;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #4CAF50;
+            }
+            QScrollBar:vertical {
+                background-color: #3c3c3c;
+                width: 12px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #555555;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #666666;
+            }
+            """
+            app.setStyleSheet(dark_stylesheet)
+        else:
+            # Светлая тема (по умолчанию)
+            app.setStyleSheet("")
+    
+    def apply_font_size(self, font_size: int):
+        """
+        Применить размер шрифта к панелям интерфейса.
+        
+        Args:
+            font_size: Размер шрифта в пунктах
+        """
+        font = QFont()
+        font.setPointSize(font_size)
+        
+        # Применяем шрифт к основным виджетам
+        self.prompt_edit.setFont(font)
+        self.results_table.setFont(font)
+        
+        # Применяем к другим текстовым виджетам, если они есть
+        for widget in self.findChildren(QTextEdit):
+            widget.setFont(font)
+        for widget in self.findChildren(QLineEdit):
+            widget.setFont(font)
+        for widget in self.findChildren(QComboBox):
+            widget.setFont(font)
     
     def show_settings(self):
         """Показать диалог настроек."""
         dialog = SettingsDialog(self, self.db)
-        dialog.exec_()
+        if dialog.exec_() == QDialog.Accepted:
+            # Перезагружаем настройки после сохранения
+            self.load_settings()
     
     def show_about(self):
         """Показать информацию о программе."""
-        QMessageBox.about(
-            self,
-            "О программе ChatList",
-            "ChatList v1.0\n\n"
-            "Приложение для сравнения ответов различных нейросетей.\n\n"
-            "Позволяет отправлять один промт в несколько моделей\n"
-            "и сравнивать их ответы."
-        )
+        about_text = """
+        <h2>ChatList v1.0</h2>
+        <p><b>Приложение для сравнения ответов различных нейросетей</b></p>
+        <p>ChatList позволяет отправлять один и тот же промт в несколько нейросетей и сравнивать их ответы в удобном интерфейсе.</p>
+        <hr>
+        <p><b>Основные возможности:</b></p>
+        <ul>
+            <li>Отправка промта в несколько моделей одновременно</li>
+            <li>Сравнение ответов в табличном виде</li>
+            <li>Сохранение выбранных результатов в базу данных</li>
+            <li>Улучшение промтов с помощью AI-ассистента</li>
+            <li>Экспорт результатов в Markdown и JSON</li>
+            <li>Настройка темы и размера шрифта</li>
+        </ul>
+        <hr>
+        <p><b>Технологии:</b></p>
+        <p>Python, PyQt5, SQLite</p>
+        <hr>
+        <p>© 2024 ChatList</p>
+        """
+        QMessageBox.about(self, "О программе ChatList", about_text)
     
     def open_selected_result(self):
         """Открыть выбранный ответ в форматированном Markdown."""
@@ -2044,10 +2195,36 @@ class SettingsDialog(QDialog):
         """Инициализация интерфейса диалога."""
         layout = QFormLayout()
         
+        # Таймаут запросов
         self.timeout_edit = QLineEdit()
         timeout_value = self.db.get_setting("timeout", "30")
         self.timeout_edit.setText(timeout_value)
+        self.timeout_edit.setToolTip("Таймаут для HTTP-запросов в секундах")
         layout.addRow("Таймаут запросов (сек):", self.timeout_edit)
+        
+        # Тема приложения
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Светлая", "light")
+        self.theme_combo.addItem("Темная", "dark")
+        theme_value = self.db.get_setting("theme", "light")
+        index = self.theme_combo.findData(theme_value)
+        if index >= 0:
+            self.theme_combo.setCurrentIndex(index)
+        self.theme_combo.setToolTip("Выберите цветовую тему интерфейса")
+        layout.addRow("Тема:", self.theme_combo)
+        
+        # Размер шрифта
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setMinimum(8)
+        self.font_size_spin.setMaximum(24)
+        self.font_size_spin.setSuffix(" пт")
+        font_size_value = self.db.get_setting("font_size", "10")
+        try:
+            self.font_size_spin.setValue(int(font_size_value))
+        except (ValueError, TypeError):
+            self.font_size_spin.setValue(10)
+        self.font_size_spin.setToolTip("Размер шрифта для панелей интерфейса")
+        layout.addRow("Размер шрифта панелей:", self.font_size_spin)
         
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.save_settings)
@@ -2062,12 +2239,21 @@ class SettingsDialog(QDialog):
     def save_settings(self):
         """Сохранить настройки."""
         try:
+            # Сохранение таймаута
             timeout = int(self.timeout_edit.text())
             if timeout < 1:
                 raise ValueError("Таймаут должен быть больше 0")
-            
             self.db.set_setting("timeout", str(timeout))
-            QMessageBox.information(self, "Успех", "Настройки сохранены!")
+            
+            # Сохранение темы
+            theme = self.theme_combo.currentData()
+            self.db.set_setting("theme", theme)
+            
+            # Сохранение размера шрифта
+            font_size = self.font_size_spin.value()
+            self.db.set_setting("font_size", str(font_size))
+            
+            QMessageBox.information(self, "Успех", "Настройки сохранены!\n\nПрименение некоторых настроек может потребовать перезапуска приложения.")
             self.accept()
         except ValueError as e:
             QMessageBox.warning(self, "Ошибка", f"Неверное значение: {str(e)}")
