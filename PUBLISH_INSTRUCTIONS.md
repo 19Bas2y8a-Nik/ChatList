@@ -50,15 +50,19 @@ git push origin v1.0.0
 5. Загрузите файл: `installer\ChatList-Setup-1.0.0.exe`
 6. Нажмите "Publish release"
 
-### 3. Настройка GitHub Pages
+### 3. Настройка GitHub Pages (БЕЗ Actions)
 
-#### Вариант 1: Через веб-интерфейс
-1. Перейдите: Settings → Pages
-2. Source: Deploy from a branch
-3. Branch: `main` → `/docs`
-4. Save
+**Рекомендуемый способ** - использовать настройки GitHub Pages напрямую:
 
-#### Вариант 2: Через отдельную ветку
+1. Перейдите в **Settings** → **Pages** вашего репозитория
+2. В разделе **Source** выберите:
+   - **Branch**: `main`
+   - **Folder**: `/docs`
+3. Нажмите **Save**
+
+GitHub автоматически будет деплоить содержимое папки `docs/` без использования Actions.
+
+**Альтернатива** - использовать ветку `gh-pages`:
 ```bash
 # Создайте ветку gh-pages
 git checkout -b gh-pages
@@ -90,7 +94,7 @@ git checkout main
 Если хотите автоматизировать процесс:
 
 1. Файл `.github/workflows/release.yml` автоматически соберет и опубликует релиз при создании тега
-2. Файл `.github/workflows/pages.yml` автоматически обновит GitHub Pages при изменении файлов в `docs/`
+2. **Примечание**: Workflow для GitHub Pages временно отключен из-за проблем с зависимостями. Используйте настройки Pages напрямую (см. выше)
 
 Для работы автоматизации:
 - Убедитесь, что workflows включены в Settings → Actions
@@ -102,8 +106,7 @@ git checkout main
 ChatList/
 ├── .github/
 │   └── workflows/
-│       ├── release.yml      # Автоматизация релизов
-│       └── pages.yml        # Автоматизация GitHub Pages
+│       └── release.yml      # Автоматизация релизов
 ├── docs/                    # Файлы для GitHub Pages
 │   ├── index.html          # Главная страница
 │   ├── assets/
@@ -125,7 +128,7 @@ ChatList/
 - [ ] Все ссылки обновлены (заменен `yourusername`)
 - [ ] Тег создан и отправлен
 - [ ] Release создан на GitHub
-- [ ] GitHub Pages настроен и работает
+- [ ] GitHub Pages настроен через Settings (БЕЗ Actions)
 - [ ] Лендинг проверен и выглядит хорошо
 
 ## Полезные команды
@@ -148,3 +151,4 @@ git describe --tags --abbrev=0
 1. Проверьте логи GitHub Actions (если используете автоматизацию)
 2. Убедитесь, что все файлы закоммичены
 3. Проверьте права доступа к репозиторию
+4. Для GitHub Pages используйте настройки напрямую (Settings → Pages), а не Actions
