@@ -21,6 +21,7 @@ from db import Database
 from models import ModelHandler, APIError
 from logger import Logger
 from prompt_improver import PromptImprover
+from version import __version__
 
 
 class SendPromptThread(QThread):
@@ -594,13 +595,16 @@ class MainWindow(QMainWindow):
         self.temp_results = []  # Временная таблица результатов в памяти
         self.send_thread = None
         
+        # Логирование версии при старте
+        self.logger.log_info(f"ChatList v{__version__} запущен")
+        
         self.init_ui()
         self.load_prompts()
         self.load_settings()
     
     def init_ui(self):
         """Инициализация интерфейса."""
-        self.setWindowTitle("ChatList - Сравнение ответов нейросетей")
+        self.setWindowTitle(f"ChatList v{__version__} - Сравнение ответов нейросетей")
         self.setGeometry(100, 100, 1200, 800)
         
         # Установка иконки приложения
@@ -1230,8 +1234,8 @@ class MainWindow(QMainWindow):
     
     def show_about(self):
         """Показать информацию о программе."""
-        about_text = """
-        <h2>ChatList v1.0</h2>
+        about_text = f"""
+        <h2>ChatList v{__version__}</h2>
         <p><b>Приложение для сравнения ответов различных нейросетей</b></p>
         <p>ChatList позволяет отправлять один и тот же промт в несколько нейросетей и сравнивать их ответы в удобном интерфейсе.</p>
         <hr>

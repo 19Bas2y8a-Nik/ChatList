@@ -4,21 +4,56 @@
 
 import logging
 import os
+import sys
 from datetime import datetime
 from typing import Optional
+
+
+def get_user_data_dir() -> str:
+    """
+    Получить путь к папке данных пользователя.
+    Для установленной версии использует AppData, для разработки - текущую директорию.
+    
+    Returns:
+        Путь к папке данных пользователя
+    """
+    # Проверяем, запущено ли приложение из установленной версии (в Program Files)
+    if getattr(sys, 'frozen', False):
+        # Приложение запущено из exe файла (установленная версия)
+        app_data = os.path.join(os.getenv('APPDATA', ''), 'ChatList')
+    else:
+        # Приложение запущено из исходников (разработка)
+        app_data = os.path.dirname(os.path.abspath(__file__))
+    
+    # Создаем папку, если её нет
+    os.makedirs(app_data, exist_ok=True)
+    return app_data
+
+
+def get_default_log_path() -> str:
+    """
+    Получить путь к файлу логов по умолчанию.
+    
+    Returns:
+        Путь к файлу логов
+    """
+    data_dir = get_user_data_dir()
+    return os.path.join(data_dir, "chatlist.log")
 
 
 class Logger:
     """Класс для логирования работы приложения."""
     
-    def __init__(self, log_file: str = "chatlist.log", log_level: int = logging.INFO):
+    def __init__(self, log_file: Optional[str] = None, log_level: int = logging.INFO):
         """
         Инициализация логгера.
         
         Args:
-            log_file: Путь к файлу логов
+            log_file: Путь к файлу логов (если None, используется путь по умолчанию)
             log_level: Уровень логирования
         """
+        if log_file is None:
+            log_file = get_default_log_path()
         self.log_file = log_file
         self.logger = logging.getLogger("ChatList")
         self.logger.setLevel(log_level)

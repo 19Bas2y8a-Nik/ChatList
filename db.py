@@ -5,20 +5,55 @@
 
 import sqlite3
 import os
+import sys
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+
+
+def get_user_data_dir() -> str:
+    """
+    Получить путь к папке данных пользователя.
+    Для установленной версии использует AppData, для разработки - текущую директорию.
+    
+    Returns:
+        Путь к папке данных пользователя
+    """
+    # Проверяем, запущено ли приложение из установленной версии (в Program Files)
+    if getattr(sys, 'frozen', False):
+        # Приложение запущено из exe файла (установленная версия)
+        app_data = os.path.join(os.getenv('APPDATA', ''), 'ChatList')
+    else:
+        # Приложение запущено из исходников (разработка)
+        app_data = os.path.dirname(os.path.abspath(__file__))
+    
+    # Создаем папку, если её нет
+    os.makedirs(app_data, exist_ok=True)
+    return app_data
+
+
+def get_default_db_path() -> str:
+    """
+    Получить путь к базе данных по умолчанию.
+    
+    Returns:
+        Путь к файлу базы данных
+    """
+    data_dir = get_user_data_dir()
+    return os.path.join(data_dir, "chatlist.db")
 
 
 class Database:
     """Класс для работы с базой данных SQLite."""
     
-    def __init__(self, db_path: str = "chatlist.db"):
+    def __init__(self, db_path: Optional[str] = None):
         """
         Инициализация подключения к базе данных.
         
         Args:
-            db_path: Путь к файлу базы данных
+            db_path: Путь к файлу базы данных (если None, используется путь по умолчанию)
         """
+        if db_path is None:
+            db_path = get_default_db_path()
         self.db_path = db_path
         self.conn = None
         self.init_database()
@@ -26,6 +61,11 @@ class Database:
     def get_connection(self) -> sqlite3.Connection:
         """Получить соединение с базой данных."""
         if self.conn is None:
+            # Создаем директорию для базы данных, если её нет
+            db_dir = os.path.dirname(self.db_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
+            
             self.conn = sqlite3.connect(self.db_path)
             self.conn.row_factory = sqlite3.Row  # Для доступа к колонкам по имени
         return self.conn
